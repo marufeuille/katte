@@ -1,0 +1,6 @@
+# Local secrets and tool state — never commit these.
+.tokens.local
+tokens.json
+.wrangler/
+.dev.vars
+node_modules/
