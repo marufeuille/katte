@@ -22,9 +22,10 @@ A helper CLI is provided as `shopping.py` in this package:
 
 ```
 python3 shopping.py list
-python3 shopping.py add NAME [MEMO]
+python3 shopping.py add NAME [MEMO] [--personal]
 python3 shopping.py check ITEM_ID | uncheck ITEM_ID
 python3 shopping.py edit ITEM_ID NAME [MEMO]
+python3 shopping.py scope ITEM_ID family|personal
 python3 shopping.py remove ITEM_ID
 python3 shopping.py clear-checked
 ```
@@ -45,6 +46,12 @@ install time). Equivalent raw HTTP calls are fine too:
   you do not need to keep your own copy or backup of the list.
 - `added_by` shows who added an item. It comes from the token, not from
   anything you send.
+- Every item has a `scope`: `family` (visible to everyone) or `personal`
+  (visible only to the person who added it). Default is `family`. When
+  the user says an item is for themselves, add it with `--personal`.
+  Only the owner can move an item between scopes (`scope` command) —
+  e.g. moving a personal item to `family` when asking someone else to
+  buy it.
 
 ## Behavior
 

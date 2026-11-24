@@ -13,7 +13,8 @@ The token is read from the file at call time and never printed.
 
 Usage:
   shopping.py list
-  shopping.py add NAME [MEMO]
+  shopping.py add NAME [MEMO] [--personal]
+  shopping.py scope ID family|personal
   shopping.py check ID | uncheck ID
   shopping.py edit ID NAME [MEMO]
   shopping.py remove ID
@@ -61,9 +62,15 @@ def main():
     if cmd == "list":
         call("GET", "/items")
     elif cmd == "add":
-        body = {"name": sys.argv[2]}
-        if len(sys.argv) > 3:
-            body["memo"] = sys.argv[3]
+        argv = [a for a in sys.argv[2:] if a != "--personal"]
+        body = {"name": argv[0]}
+        if len(argv) > 1:
+            body["memo"] = argv[1]
+        if "--personal" in sys.argv:
+            body["scope"] = "personal"
+        call("POST", "/items", body)
+    elif cmd == "scope":
+        call("PATCH", "/items/" + sys.argv[2], {"scope": sys.argv[3]})
         call("POST", "/items", body)
     elif cmd == "check":
         call("PATCH", "/items/" + sys.argv[2], {"checked": True})

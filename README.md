@@ -36,7 +36,7 @@ person B ── their AI agent ──(skill)──┘
 
 - **Cloudflare Workers** — the API. Stateless; all state is in D1.
 - **Cloudflare D1** — two tables:
-  - `events` — append-only log (`item_id`, `type`, `name`, `memo`, `actor`, `created_at`)
+  - `events` — append-only log (`item_id`, `type`, `name`, `memo`, `scope`, `actor`, `created_at`)
   - `tokens` — per-person API tokens, stored only as SHA-256 hashes
 
 ## Event types
@@ -62,7 +62,7 @@ All endpoints require `Authorization: Bearer <token>` (see below).
 | --- | --- |
 | `GET /items` | List items. Unpurchased first (in added order), then purchased (most recently purchased first). |
 | `POST /items` | Add an item. Body: `{ "name": "milk", "memo": "2 bottles" }` (`memo` optional). Returns the created item, `201`. |
-| `PATCH /items/:id` | Update. Body may contain `checked` (boolean), `name`, and/or `memo`. Appends the corresponding event(s). |
+| `PATCH /items/:id` | Update. Body may contain `checked` (boolean), `name`, `memo`, and/or `scope` (`family`/`personal`; scope changes are owner-only). Appends the corresponding event(s). |
 | `DELETE /items/:id` | Remove an item (appends `item_removed`). |
 | `POST /items/clear-checked` | Remove all purchased items. Returns `{ "removed": <count> }`. |
 

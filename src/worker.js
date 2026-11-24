@@ -42,11 +42,11 @@ async function authenticate(request, env) {
   return row ? row.name : null;
 }
 
-async function appendEvent(env, { itemId, type, name = null, memo = null, actor }) {
+async function appendEvent(env, { itemId, type, name = null, memo = null, scope = null, actor }) {
   await env.DB.prepare(
-    "INSERT INTO events (item_id, type, name, memo, actor, created_at) VALUES (?, ?, ?, ?, ?, ?)"
+    "INSERT INTO events (item_id, type, name, memo, scope, actor, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
   )
-    .bind(itemId, type, name, memo, actor, new Date().toISOString())
+    .bind(itemId, type, name, memo, scope, actor, new Date().toISOString())
     .run();
 }
 
@@ -54,7 +54,7 @@ async function appendEvent(env, { itemId, type, name = null, memo = null, actor 
 // Events after item_removed for an item are ignored.
 async function deriveItems(env) {
   const { results } = await env.DB.prepare(
-    "SELECT id, item_id, type, name, memo, actor, created_at FROM events ORDER BY id ASC"
+    "SELECT id, item_id, type, name, memo, scope, actor, created_at FROM events ORDER BY id ASC"
   ).all();
   const items = new Map();
   for (const ev of results) {
@@ -66,6 +66,7 @@ async function deriveItems(env) {
           id: ev.item_id,
           name: ev.name,
           memo: ev.memo,
+          scope: ev.scope === "personal" ? "personal" : "family",
           checked: false,
           checked_at: null,
           added_by: ev.actor,
@@ -78,6 +79,9 @@ async function deriveItems(env) {
         if (item) {
           if (ev.name !== null) item.name = ev.name;
           if (ev.memo !== null) item.memo = ev.memo;
+          if (ev.scope !== null && ev.scope !== undefined) {
+            item.scope = ev.scope === "personal" ? "personal" : "family";
+          }
           item.last_event_id = ev.id;
         }
         break;
@@ -111,11 +115,17 @@ function publicItem(item) {
     id: item.id,
     name: item.name,
     memo: item.memo,
+    scope: item.scope,
     checked: item.checked,
     checked_at: item.checked_at,
     added_by: item.added_by,
     created_at: item.created_at,
   };
+}
+
+// Family items are visible to everyone; personal items only to their owner.
+function visibleTo(item, actor) {
+  return item.scope !== "personal" || item.added_by === actor;
 }
 
 // Unchecked first (in added order), then checked (most recently checked first).
@@ -158,7 +168,7 @@ export default {
     // POST /items/clear-checked — append item_removed for each checked item.
     if (isClearChecked) {
       const items = await deriveItems(env);
-      const targets = items.filter((i) => i.checked);
+      const targets = items.filter((i) => i.checked && visibleTo(i, actor));
       for (const item of targets) {
         await appendEvent(env, { itemId: item.id, type: EVENT.REMOVED, actor });
       }
@@ -167,7 +177,7 @@ export default {
 
     // GET /items
     if (method === "GET" && path === "/items") {
-      const items = sortItems(await deriveItems(env));
+      const items = sortItems((await deriveItems(env)).filter((i) => visibleTo(i, actor)));
       return json({ items: items.map(publicItem) });
     }
 
@@ -178,8 +188,9 @@ export default {
       const name = typeof body.name === "string" ? body.name.trim() : "";
       if (!name) return error(400, "name is required");
       const memo = body.memo === undefined || body.memo === null ? null : String(body.memo);
+      const scope = body.scope === "personal" ? "personal" : "family";
       const itemId = crypto.randomUUID();
-      await appendEvent(env, { itemId, type: EVENT.ADDED, name, memo, actor });
+      await appendEvent(env, { itemId, type: EVENT.ADDED, name, memo, scope, actor });
       const items = await deriveItems(env);
       const created = items.find((i) => i.id === itemId);
       return json(publicItem(created), 201);
@@ -189,7 +200,7 @@ export default {
     const itemId = decodeURIComponent(itemMatch[1]);
     const items = await deriveItems(env);
     const item = items.find((i) => i.id === itemId);
-    if (!item) return error(404, "not found");
+    if (!item || !visibleTo(item, actor)) return error(404, "not found");
 
     if (method === "DELETE") {
       await appendEvent(env, { itemId, type: EVENT.REMOVED, actor });
@@ -202,14 +213,19 @@ export default {
     const hasName = typeof body.name === "string" && body.name.trim() !== "";
     const hasMemo = body.memo !== undefined;
     const hasChecked = typeof body.checked === "boolean";
-    if (!hasName && !hasMemo && !hasChecked) return error(400, "nothing to update");
+    const hasScope = body.scope === "family" || body.scope === "personal";
+    if (!hasName && !hasMemo && !hasChecked && !hasScope) return error(400, "nothing to update");
+    if (hasScope && body.scope !== item.scope && actor !== item.added_by) {
+      return error(403, "only the owner can change scope");
+    }
 
-    if (hasName || hasMemo) {
+    if (hasName || hasMemo || (hasScope && body.scope !== item.scope)) {
       await appendEvent(env, {
         itemId,
         type: EVENT.EDITED,
         name: hasName ? body.name.trim() : null,
         memo: hasMemo ? (body.memo === null ? null : String(body.memo)) : null,
+        scope: hasScope && body.scope !== item.scope ? body.scope : null,
         actor,
       });
     }
